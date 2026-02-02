@@ -45,6 +45,8 @@ class TESOptimizer:
         self.total_cost = 0
         self.capex_val = 0
         self.opex_val = 0
+        self.total_initial_capex = 0
+        self.npc = 0
         self.Q_hp_results = {} # To store optimized values
         self.E_stored_results = {} # To store optimized values
 
@@ -166,6 +168,10 @@ class TESOptimizer:
         self.capex_val = pulp.value(annualized_capex)
         self.opex_val = pulp.value(total_opex)
 
+        # New Calculations
+        self.total_initial_capex = self.p_hp_opt_kw * self.capex_hp_per_kw + self.v_tank_opt * self.capex_tank_per_m3
+        self.npc = self.total_cost / self.annuity_factor
+
         # Store operational variables values for visualization
         for day in self.day_types:
             self.Q_hp_results[day] = [pulp.value(Q_hp[day][h]) for h in range(24)]
@@ -177,6 +183,9 @@ class TESOptimizer:
         print(f"Total Annual Cost: {self.total_cost/1000:.2f} k€")
         print(f"  - Annualized CAPEX: {self.capex_val/1000:.2f} k€")
         print(f"  - Total Annual OPEX: {self.opex_val/1000:.2f} k€")
+        print(f"  - Total Initial CAPEX: {self.total_initial_capex/1000:.2f} k€")
+        print(f"  - Net Present Cost (NPC): {self.npc/1000:.2f} k€")
+
 
     def visualize_results(self):
         """Generates plots for the operational strategy."""
@@ -244,132 +253,130 @@ class TESOptimizer:
             print(f"Saved plot: {filename}")
 
     def generate_readme(self):
-            """Generates the README.md report with detailed mathematical formulations."""
+        """Generates the README.md report with detailed mathematical formulations."""
 
-            # 修正说明：
-            # 在 Python f-string 中，LaTeX 的反斜杠 \ 需要双写为 \\，否则 \rho 会变成回车符，\alpha 会变成响铃符。
-            # LaTeX 的花括号 {} 需要双写为 {{}}，否则会被误认为是 Python 变量占位符。
+        readme_content = f"""# Thermal Energy Storage (TES) Optimization Project
 
-            readme_content = f"""# Thermal Energy Storage (TES) Optimization Project
+## 1. Project Overview
+This project optimizes the sizing of a **Heat Pump (HP)** and a **Thermal Energy Storage (TES)** tank for a District Heating Network (DHN). The goal is to minimize the **Total Annualized Cost (TOTEX)** while satisfying the hourly heat demand of the network.
 
-    ## 1. Project Overview
-    This project optimizes the sizing of a **Heat Pump (HP)** and a **Thermal Energy Storage (TES)** tank for a District Heating Network (DHN). The goal is to minimize the **Total Annualized Cost (TOTEX)** while satisfying the hourly heat demand of the network.
+---
 
-    ---
+## 2. Optimization Results (Executive Summary)
 
-    ## 2. Optimization Results (Executive Summary)
+### ✅ Optimal System Sizing
+* **Heat Pump Capacity ($P_{{hp\\_max}}$):** {self.p_hp_opt_kw / 1000:.4f} MW
+* **Storage Tank Volume ($V_{{tank}}$):** {self.v_tank_opt:.2f} m³
 
-    ### ✅ Optimal System Sizing
-    * **Heat Pump Capacity ($P_{{hp\\_max}}$):** {self.p_hp_opt_kw / 1000:.4f} MW
-    * **Storage Tank Volume ($V_{{tank}}$):** {self.v_tank_opt:.2f} m³
+### 💰 Economic Analysis
+* **Total Annualized Cost:** {self.total_cost / 1000:.2f} k€
+    * **Annualized CAPEX:** {self.capex_val / 1000:.2f} k€
+    * **Annual OPEX:** {self.opex_val / 1000:.2f} k€
+* **Total Initial Investment (CAPEX):** {self.total_initial_capex / 1000:.2f} k€
+* **Net Present Cost (NPC) over {self.n} years:** {self.npc / 1000:.2f} k€
 
-    ### 💰 Economic Analysis
-    * **Total Annualized Cost:** {self.total_cost / 1000:.2f} k€
-        * **Annualized CAPEX:** {self.capex_val / 1000:.2f} k€
-        * **Annual OPEX:** {self.opex_val / 1000:.2f} k€
+---
 
-    ---
+## 3. Mathematical Model & Methodology
 
-    ## 3. Mathematical Model & Methodology
+### 3.1. Physical Parameters
+The model uses a physics-based approach to calculate system performance.
 
-    ### 3.1. Physical Parameters
-    The model uses a physics-based approach to calculate system performance.
+* **Heat Pump COP (Lorentz Efficiency):**
+    The Coefficient of Performance is modeled using the Lorentz efficiency with a system efficiency factor ($\\eta_{{sys}} = 0.50$).
 
-    * **Heat Pump COP (Lorentz Efficiency):**
-        The Coefficient of Performance is modeled using the Lorentz efficiency with a system efficiency factor ($\\eta_{{sys}} = 0.50$).
+    $$ COP = \\eta_{{sys}} \\cdot \\frac{{T_{{sink, K}}}}{{T_{{sink, K}} - T_{{source, K}}}} $$
 
-        $$ COP = \\eta_{{sys}} \\cdot \\frac{{T_{{sink, K}}}}{{T_{{sink, K}} - T_{{source, K}}}} $$
+    Where:
+    * $T_{{source, K}} = T_{{amb}} + 273.15$ (Air Temperature)
+    * $T_{{sink, K}} = \\frac{{T_{{supply}} + T_{{return}}}}{{2}} + 273.15$ (Mean Water Temperature)
+    * $T_{{return}} = {self.T_return}^\\circ C$ (Fixed)
+    * $T_{{supply}}$ varies by day type (Climate Curve).
 
-        Where:
-        * $T_{{source, K}} = T_{{amb}} + 273.15$ (Air Temperature)
-        * $T_{{sink, K}} = \\frac{{T_{{supply}} + T_{{return}}}}{{2}} + 273.15$ (Mean Water Temperature)
-        * $T_{{return}} = {self.T_return}^\\circ C$ (Fixed)
-        * $T_{{supply}}$ varies by day type (Climate Curve).
+* **Storage Energy Density:**
+    The energy storage capacity depends on the supply temperature for the specific day type.
 
-    * **Storage Energy Density:**
-        The energy storage capacity depends on the supply temperature for the specific day type.
+    $$ \\rho_{{energy}} [kWh/m^3] = \\frac{{\\rho_{{water}} \\cdot c_p \\cdot (T_{{supply}} - T_{{return}})}}{{3600}} $$
 
-        $$ \\rho_{{energy}} [kWh/m^3] = \\frac{{\\rho_{{water}} \\cdot c_p \\cdot (T_{{supply}} - T_{{return}})}}{{3600}} $$
+    * $\\rho_{{water}} \\approx 1000 kg/m^3$
+    * $c_p \\approx 4.18 kJ/kgK$
 
-        * $\\rho_{{water}} \\approx 1000 kg/m^3$
-        * $c_p \\approx 4.18 kJ/kgK$
+### 3.2. Economic Parameters
+* **Annuity Factor ($\\alpha$):**
+    Used to annualize the initial CAPEX over the project lifetime.
 
-    ### 3.2. Economic Parameters
-    * **Annuity Factor ($\\alpha$):**
-        Used to annualize the initial CAPEX over the project lifetime.
+    $$ \\alpha = \\frac{{r(1+r)^N}}{{(1+r)^N - 1}} = {self.annuity_factor:.4f} $$
 
-        $$ \\alpha = \\frac{{r(1+r)^N}}{{(1+r)^N - 1}} = {self.annuity_factor:.4f} $$
+    * Discount Rate ($r$): {self.r * 100}%
+    * Lifetime ($N$): {self.n} years
 
-        * Discount Rate ($r$): {self.r * 100}%
-        * Lifetime ($N$): {self.n} years
+### 3.3. Optimization Problem (MILP)
+The problem is formulated as a Mixed-Integer Linear Program (MILP) solved using `PuLP`.
 
-    ### 3.3. Optimization Problem (MILP)
-    The problem is formulated as a Mixed-Integer Linear Program (MILP) solved using `PuLP`.
+**Objective Function:** Minimize Total Annual Cost
+$$ C_{{total}} = CAPEX_{{annual}} + OPEX_{{annual}} $$
 
-    **Objective Function:** Minimize Total Annual Cost
-    $$ C_{{total}} = CAPEX_{{annual}} + OPEX_{{annual}} $$
+1.  **CAPEX:**
+    $$ CAPEX_{{annual}} = \\alpha \\cdot (P_{{hp}}^{{cap}} \\cdot {self.capex_hp_per_kw} + V_{{tank}} \\cdot {self.capex_tank_per_m3}) $$
 
-    1.  **CAPEX:**
-        $$ CAPEX_{{annual}} = \\alpha \\cdot (P_{{hp}}^{{cap}} \\cdot {self.capex_hp_per_kw} + V_{{tank}} \\cdot {self.capex_tank_per_m3}) $$
+2.  **OPEX:**
+    $$ OPEX_{{annual}} = \\sum_{{days}} W_{{day}} \\sum_{{h=0}}^{{23}} \\left( \\frac{{Q_{{hp}}(h)}}{{COP_{{day}}}} \\cdot Price_{{elec}}(h) \\right) $$
 
-    2.  **OPEX:**
-        $$ OPEX_{{annual}} = \\sum_{{days}} W_{{day}} \\sum_{{h=0}}^{{23}} \\left( \\frac{{Q_{{hp}}(h)}}{{COP_{{day}}}} \\cdot Price_{{elec}}(h) \\right) $$
+**Constraints:**
+1.  **Power Limit:** $Q_{{hp}}(h) \\le P_{{hp}}^{{cap}}$
+2.  **Storage Limit:** $E_{{stored}}(h) \\le V_{{tank}} \\cdot \\rho_{{energy}}(day)$
+3.  **Energy Balance:** $E_{{stored}}(h) = E_{{stored}}(h-1) + Q_{{hp}}(h) - Load(h)$
+4.  **Cyclic Constraint:** $E_{{stored}}(24) = E_{{stored}}(0)$
 
-    **Constraints:**
-    1.  **Power Limit:** $Q_{{hp}}(h) \\le P_{{hp}}^{{cap}}$
-    2.  **Storage Limit:** $E_{{stored}}(h) \\le V_{{tank}} \\cdot \\rho_{{energy}}(day)$
-    3.  **Energy Balance:** $E_{{stored}}(h) = E_{{stored}}(h-1) + Q_{{hp}}(h) - Load(h)$
-    4.  **Cyclic Constraint:** $E_{{stored}}(24) = E_{{stored}}(0)$
+---
 
-    ---
+## 4. Code Structure & Logic Explained
+The Python script `optimize_tes.py` is structured into a class `TESOptimizer` that handles the entire workflow:
 
-    ## 4. Code Structure & Logic Explained
-    The Python script `optimize_tes.py` is structured into a class `TESOptimizer` that handles the entire workflow:
+1.  **`load_data()`**:
+    * Reads hourly heat load profiles and temperature data from Excel.
+    * **Crucial Step:** Converts heat loads from **MW** to **kW** to ensure consistency with cost parameters (€/kW).
 
-    1.  **`load_data()`**: 
-        * Reads hourly heat load profiles and temperature data from Excel.
-        * **Crucial Step:** Converts heat loads from **MW** to **kW** to ensure consistency with cost parameters (€/kW).
+2.  **`calculate_parameters()`**:
+    * Computes the **COP** and **Storage Density** for each specific day type based on ambient and supply temperatures.
+    * Generates the electricity price profile (Peak/Off-Peak hours) for France 2026.
 
-    2.  **`calculate_parameters()`**:
-        * Computes the **COP** and **Storage Density** for each specific day type based on ambient and supply temperatures.
-        * Generates the electricity price profile (Peak/Off-Peak hours) for France 2026.
+3.  **`build_and_solve()` (The Core)**:
+    * Constructs the MILP model using the `PuLP` library.
+    * Defines decision variables: Heat Pump Size ($P_{{hp\\_max}}$) and Tank Volume ($V_{{tank}}$).
+    * Sets up the objective function (minimize cost) and physical constraints (energy balance, capacity limits).
+    * Solves the problem to find the global optimum.
 
-    3.  **`build_and_solve()` (The Core)**:
-        * Constructs the MILP model using the `PuLP` library.
-        * Defines decision variables: Heat Pump Size ($P_{{hp\\_max}}$) and Tank Volume ($V_{{tank}}$).
-        * Sets up the objective function (minimize cost) and physical constraints (energy balance, capacity limits).
-        * Solves the problem to find the global optimum.
+4.  **`visualize_results()`**:
+    * Generates dual-axis plots using `matplotlib`.
+    * Visualizes the "Load Shifting" strategy: showing how the Heat Pump ramps up during low-price hours to charge the storage.
 
-    4.  **`visualize_results()`**:
-        * Generates dual-axis plots using `matplotlib`.
-        * Visualizes the "Load Shifting" strategy: showing how the Heat Pump ramps up during low-price hours to charge the storage.
+---
 
-    ---
+## 5. Operational Strategy
+The system minimizes costs by shifting heat production to off-peak electricity hours and storing it for peak hours.
+* **Off-Peak Hours ({self.price_off_peak} €/kWh):** 00:00-06:00, 12:00-14:00.
+* **Peak Hours ({self.price_peak} €/kWh):** 06:00-12:00, 14:00-24:00.
 
-    ## 5. Operational Strategy
-    The system minimizes costs by shifting heat production to off-peak electricity hours and storing it for peak hours.
-    * **Off-Peak Hours ({self.price_off_peak} €/kWh):** 00:00-06:00, 12:00-14:00.
-    * **Peak Hours ({self.price_peak} €/kWh):** 06:00-12:00, 14:00-24:00.
+The Heat Pump tends to run at higher capacity during off-peak times to charge the storage tank, which then discharges during peak times to satisfy the heat load, thereby avoiding expensive electricity.
 
-    The Heat Pump tends to run at higher capacity during off-peak times to charge the storage tank, which then discharges during peak times to satisfy the heat load, thereby avoiding expensive electricity.
+## 6. Operational Profiles
+Below are the detailed operational profiles for each day type.
 
-    ## 6. Operational Profiles
-    Below are the detailed operational profiles for each day type.
+"""
+        for day in self.day_types:
+            readme_content += f"### {day}\n"
+            readme_content += f"![{day} Operation](plots/operation_{day}.png)\n\n"
 
-    """
-            for day in self.day_types:
-                readme_content += f"### {day}\n"
-                readme_content += f"![{day} Operation](plots/operation_{day}.png)\n\n"
-
-            # 使用 utf-8 编码写入
-            with open('README.md', 'w', encoding='utf-8') as f:
-                f.write(readme_content)
-            print("\nREADME.md generated successfully with corrected formatting.")
+        # 使用 utf-8 编码写入
+        with open('README.md', 'w', encoding='utf-8') as f:
+            f.write(readme_content)
+        print("\nREADME.md generated successfully with corrected formatting.")
 
 if __name__ == "__main__":
     optimizer = TESOptimizer()
     optimizer.load_data()
     optimizer.calculate_parameters()
     optimizer.build_and_solve()
-    optimizer.visualize_results() # Added this call
+    optimizer.visualize_results()
     optimizer.generate_readme()
