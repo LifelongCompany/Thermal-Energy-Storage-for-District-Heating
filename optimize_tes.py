@@ -50,6 +50,10 @@ class TESOptimizer:
         self.Q_hp_results = {} # To store optimized values
         self.E_stored_results = {} # To store optimized values
 
+        # Scenario Results
+        self.results_no_storage = None
+        self.results_with_storage = None
+
     def load_data(self):
         """Loads and parses data from the Excel file."""
         print(f"Loading data from {self.file_path}...")
@@ -100,9 +104,13 @@ class TESOptimizer:
             else:
                 self.electricity_prices.append(self.price_peak)
 
-    def build_and_solve(self):
-        """Builds the PuLP optimization model and solves it."""
-        print("\nBuilding Optimization Model...")
+    def build_and_solve(self, enable_storage=True):
+        """
+        Builds the PuLP optimization model and solves it.
+        :param enable_storage: If False, enforces V_tank = 0.
+        """
+        scenario_name = "With Storage" if enable_storage else "No Storage"
+        print(f"\nBuilding Optimization Model ({scenario_name})...")
 
         self.prob = pulp.LpProblem("TES_Optimization", pulp.LpMinimize)
 
@@ -119,6 +127,10 @@ class TESOptimizer:
             for h in range(24):
                 Q_hp[day][h] = pulp.LpVariable(f"Q_hp_{day}_{h}", lowBound=0, cat='Continuous')
                 E_stored[day][h] = pulp.LpVariable(f"E_stored_{day}_{h}", lowBound=0, cat='Continuous')
+
+        # Constraint: No Storage Scenario
+        if not enable_storage:
+            self.prob += V_tank == 0, "No_Storage_Constraint"
 
         # Objective Function
         annualized_capex = (P_hp_max * self.capex_hp_per_kw + V_tank * self.capex_tank_per_m3) * self.annuity_factor
@@ -161,30 +173,50 @@ class TESOptimizer:
         status = pulp.LpStatus[self.prob.status]
         print(f"Status: {status}")
 
-        # Store Results
-        self.p_hp_opt_kw = pulp.value(P_hp_max)
-        self.v_tank_opt = pulp.value(V_tank)
-        self.total_cost = pulp.value(self.prob.objective)
-        self.capex_val = pulp.value(annualized_capex)
-        self.opex_val = pulp.value(total_opex)
+        # Extract values
+        p_hp_val = pulp.value(P_hp_max)
+        v_tank_val = pulp.value(V_tank)
+        total_cost_val = pulp.value(self.prob.objective)
+        capex_val_res = pulp.value(annualized_capex)
+        opex_val_res = pulp.value(total_opex)
+        initial_capex_val = p_hp_val * self.capex_hp_per_kw + v_tank_val * self.capex_tank_per_m3
+        npc_val = total_cost_val / self.annuity_factor
 
-        # New Calculations
-        self.total_initial_capex = self.p_hp_opt_kw * self.capex_hp_per_kw + self.v_tank_opt * self.capex_tank_per_m3
-        self.npc = self.total_cost / self.annuity_factor
+        results = {
+            'p_hp_opt_kw': p_hp_val,
+            'v_tank_opt': v_tank_val,
+            'total_cost': total_cost_val,
+            'capex_val': capex_val_res,
+            'opex_val': opex_val_res,
+            'total_initial_capex': initial_capex_val,
+            'npc': npc_val
+        }
 
-        # Store operational variables values for visualization
-        for day in self.day_types:
-            self.Q_hp_results[day] = [pulp.value(Q_hp[day][h]) for h in range(24)]
-            self.E_stored_results[day] = [pulp.value(E_stored[day][h]) for h in range(24)]
+        # Store Results based on scenario
+        if enable_storage:
+            self.results_with_storage = results
+            # Update main attributes for compatibility
+            self.p_hp_opt_kw = p_hp_val
+            self.v_tank_opt = v_tank_val
+            self.total_cost = total_cost_val
+            self.capex_val = capex_val_res
+            self.opex_val = opex_val_res
+            self.total_initial_capex = initial_capex_val
+            self.npc = npc_val
+
+            # Store operational variables values for visualization
+            for day in self.day_types:
+                self.Q_hp_results[day] = [pulp.value(Q_hp[day][h]) for h in range(24)]
+                self.E_stored_results[day] = [pulp.value(E_stored[day][h]) for h in range(24)]
+        else:
+            self.results_no_storage = results
 
         print("\n--- Results ---")
-        print(f"Optimal Heat Pump Size: {self.p_hp_opt_kw/1000:.4f} MW")
-        print(f"Optimal Tank Volume: {self.v_tank_opt:.2f} m3")
-        print(f"Total Annual Cost: {self.total_cost/1000:.2f} k€")
-        print(f"  - Annualized CAPEX: {self.capex_val/1000:.2f} k€")
-        print(f"  - Total Annual OPEX: {self.opex_val/1000:.2f} k€")
-        print(f"  - Total Initial CAPEX: {self.total_initial_capex/1000:.2f} k€")
-        print(f"  - Net Present Cost (NPC): {self.npc/1000:.2f} k€")
+        print(f"Optimal Heat Pump Size: {p_hp_val/1000:.4f} MW")
+        print(f"Optimal Tank Volume: {v_tank_val:.2f} m3")
+        print(f"Total Annual Cost: {total_cost_val/1000:.2f} k€")
+        print(f"  - Annualized CAPEX: {capex_val_res/1000:.2f} k€")
+        print(f"  - Total Annual OPEX: {opex_val_res/1000:.2f} k€")
 
 
     def visualize_results(self):
@@ -368,6 +400,34 @@ Below are the detailed operational profiles for each day type.
             readme_content += f"### {day}\n"
             readme_content += f"![{day} Operation](plots/operation_{day}.png)\n\n"
 
+        # Append Comparison Section if results exist
+        if self.results_no_storage:
+            no_storage_cost = self.results_no_storage['total_cost']
+            savings = no_storage_cost - self.total_cost
+
+            # Helper to safely handle subtractions if needed, but direct is fine here
+            ns_capex = self.results_no_storage['capex_val']
+            ns_opex = self.results_no_storage['opex_val']
+            ns_init_capex = self.results_no_storage['total_initial_capex']
+            ns_hp = self.results_no_storage['p_hp_opt_kw']
+            ns_tank = self.results_no_storage['v_tank_opt']
+
+            readme_content += f"""
+## 7. Economic Benefit of Energy Storage
+By introducing Thermal Energy Storage, the system achieves significant cost savings compared to a "Heat Pump Only" scenario.
+
+| Metric | With Storage (Optimized) | No Storage (HP Only) | Savings |
+| :--- | :--- | :--- | :--- |
+| **Total Annual Cost** | **{self.total_cost/1000:.2f} k€** | **{no_storage_cost/1000:.2f} k€** | **{savings/1000:.2f} k€** |
+| Annualized CAPEX | {self.capex_val/1000:.2f} k€ | {ns_capex/1000:.2f} k€ | {(ns_capex - self.capex_val)/1000:.2f} k€ |
+| Annual OPEX | {self.opex_val/1000:.2f} k€ | {ns_opex/1000:.2f} k€ | {(ns_opex - self.opex_val)/1000:.2f} k€ |
+| Initial CAPEX | {self.total_initial_capex/1000:.2f} k€ | {ns_init_capex/1000:.2f} k€ | {(ns_init_capex - self.total_initial_capex)/1000:.2f} k€ |
+| Heat Pump Size | {self.p_hp_opt_kw/1000:.4f} MW | {ns_hp/1000:.4f} MW | - |
+| Tank Volume | {self.v_tank_opt:.2f} m³ | {ns_tank:.2f} m³ | - |
+
+> **Note:** "Savings" = (No Storage) - (With Storage). A positive value indicates the Storage scenario is cheaper.
+"""
+
         # 使用 utf-8 编码写入
         with open('README.md', 'w', encoding='utf-8') as f:
             f.write(readme_content)
@@ -377,6 +437,12 @@ if __name__ == "__main__":
     optimizer = TESOptimizer()
     optimizer.load_data()
     optimizer.calculate_parameters()
-    optimizer.build_and_solve()
+
+    # 1. Run No Storage Baseline
+    optimizer.build_and_solve(enable_storage=False)
+
+    # 2. Run With Storage (Main Optimization)
+    optimizer.build_and_solve(enable_storage=True)
+
     optimizer.visualize_results()
     optimizer.generate_readme()

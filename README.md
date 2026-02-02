@@ -117,3 +117,18 @@ Below are the detailed operational profiles for each day type.
 
 ### Minimum_heatingDay_Profile
 ![Minimum_heatingDay_Profile Operation](plots/operation_Minimum_heatingDay_Profile.png)
+
+
+## 7. Economic Benefit of Energy Storage
+By introducing Thermal Energy Storage, the system achieves significant cost savings compared to a "Heat Pump Only" scenario.
+
+| Metric | With Storage (Optimized) | No Storage (HP Only) | Savings |
+| :--- | :--- | :--- | :--- |
+| **Total Annual Cost** | **676.86 k€** | **711.36 k€** | **34.50 k€** |
+| Annualized CAPEX | 240.09 k€ | 232.89 k€ | -7.21 k€ |
+| Annual OPEX | 436.77 k€ | 478.47 k€ | 41.71 k€ |
+| Initial CAPEX | 3262.93 k€ | 3165.00 k€ | -97.93 k€ |
+| Heat Pump Size | 2.0225 MW | 2.1100 MW | - |
+| Tank Volume | 190.99 m³ | 0.00 m³ | - |
+
+> **Note:** "Savings" = (No Storage) - (With Storage). A positive value indicates the Storage scenario is cheaper.
