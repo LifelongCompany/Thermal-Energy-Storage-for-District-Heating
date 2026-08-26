@@ -296,11 +296,11 @@ This project optimizes the sizing of a **Heat Pump (HP)** and a **Thermal Energy
 
 ## 2. Optimization Results (Executive Summary)
 
-### ✅ Optimal System Sizing
+### Optimal System Sizing
 * **Heat Pump Capacity ($P_{{hp\\_max}}$):** {self.p_hp_opt_kw / 1000:.4f} MW
 * **Storage Tank Volume ($V_{{tank}}$):** {self.v_tank_opt:.2f} m³
 
-### 💰 Economic Analysis
+### Economic Analysis
 * **Total Annualized Cost:** {self.total_cost / 1000:.2f} k€
     * **Annualized CAPEX:** {self.capex_val / 1000:.2f} k€
     * **Annual OPEX:** {self.opex_val / 1000:.2f} k€
@@ -367,13 +367,13 @@ The Python script `optimize_tes.py` is structured into a class `TESOptimizer` th
 
 1.  **`load_data()`**:
     * Reads hourly heat load profiles and temperature data from Excel.
-    * **Crucial Step:** Converts heat loads from **MW** to **kW** to ensure consistency with cost parameters (€/kW).
+    * Converts heat loads from **MW** to **kW** so they match the cost parameters (€/kW).
 
 2.  **`calculate_parameters()`**:
     * Computes the **COP** and **Storage Density** for each specific day type based on ambient and supply temperatures.
     * Generates the electricity price profile (Peak/Off-Peak hours) for France 2026.
 
-3.  **`build_and_solve()` (The Core)**:
+3.  **`build_and_solve()`**:
     * Constructs the MILP model using the `PuLP` library.
     * Defines decision variables: Heat Pump Size ($P_{{hp\\_max}}$) and Tank Volume ($V_{{tank}}$).
     * Sets up the objective function (minimize cost) and physical constraints (energy balance, capacity limits).
@@ -390,7 +390,7 @@ The system minimizes costs by shifting heat production to off-peak electricity h
 * **Off-Peak Hours ({self.price_off_peak} €/kWh):** 00:00-06:00, 12:00-14:00.
 * **Peak Hours ({self.price_peak} €/kWh):** 06:00-12:00, 14:00-24:00.
 
-The Heat Pump tends to run at higher capacity during off-peak times to charge the storage tank, which then discharges during peak times to satisfy the heat load, thereby avoiding expensive electricity.
+The Heat Pump runs at higher capacity during off-peak times to charge the storage tank, which then discharges during peak times to satisfy the heat load and avoid expensive electricity.
 
 ## 6. Operational Profiles
 Below are the detailed operational profiles for each day type.
@@ -414,7 +414,7 @@ Below are the detailed operational profiles for each day type.
 
             readme_content += f"""
 ## 7. Economic Benefit of Energy Storage
-By introducing Thermal Energy Storage, the system achieves significant cost savings compared to a "Heat Pump Only" scenario.
+Adding Thermal Energy Storage lowers the total annual cost compared with a Heat-Pump-only setup.
 
 | Metric | With Storage (Optimized) | No Storage (HP Only) | Savings |
 | :--- | :--- | :--- | :--- |
